@@ -1,7 +1,7 @@
-name: Build PR
+name: Build master
 
 on:
-  pull_request:
+  push:
     branches:
       - 'master'
 
@@ -22,11 +22,8 @@ jobs:
           - true
 
     runs-on: ${{ matrix.os }}
-    env:
-      REVIEWDOG_TOKEN: 232b1588ed9db71d
 
     steps:
-
       - name: Cancel Previous Runs
         uses: styfle/cancel-workflow-action@0.7.0
         with:
@@ -45,13 +42,13 @@ jobs:
           dune-cache: true
 
       ########## Installing a linter
-      - uses: actions/checkout@v2
-        with:
-          repository: Kakadu/mylinter
-          path: mylinter
-      - run: opam pin add ./mylinter --no-action
-      - name: Installing a linter
-        run: opam install mylinter --yes
+      #- uses: actions/checkout@v2
+      #  with:
+      #    repository: Kakadu/mylinter
+      #    path: mylinter
+      #- run: opam pin add ./mylinter --no-action
+      #- name: Installing a linter
+      #  run: opam install mylinter --yes
 
       ############# Detecting and compiling fp2021
       # Smart link about setting environment variables
@@ -82,33 +79,33 @@ jobs:
           opam install odoc --yes
           cd ${{ env.latest }} && opam exec -- dune build @doc
 
-      #- name: Deploy API documentation
-      #  uses: peaceiris/actions-gh-pages@v3
-      #  with:
-      #    github_token: ${{ secrets.GITHUB_TOKEN }}
-      #    publish_dir: ${{ env.latest }}/_build/default/_doc/_html
-      #    keep_files: true
-      #    destination_dir: doc/${{ env.latest }}
+      - name: Deploy API documentation
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          #github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ${{ env.latest }}/_build/default/_doc/_html
+          keep_files: true
+          destination_dir: doc/${{ env.latest }}
 
-      - uses: reviewdog/action-setup@v1
+      #- uses: reviewdog/action-setup@v1
 
-      - run: |
-          echo "RDJSON_DIR_PATH=_build/default/_found_lints" >> $GITHUB_ENV
-      - run: cd ${{ env.latest }} && mkdir -p ${{ env.RDJSON_DIR_PATH }}
-      - run: |
-          echo "RDJSON_FILE_PATH=${{ env.RDJSON_DIR_PATH }}/$(date +%Y-%m-%d_%H:%M).rdjsonl" >> $GITHUB_ENV
+      #- run: |
+      #    echo "RDJSON_DIR_PATH=_build/default/_found_lints" >> $GITHUB_ENV
+      #- run: cd ${{ env.latest }} && mkdir -p ${{ env.RDJSON_DIR_PATH }}
+      #- run: |
+      #    echo "RDJSON_FILE_PATH=${{ env.RDJSON_DIR_PATH }}/$(date +%Y-%m-%d_%H:%M).rdjsonl" >> $GITHUB_ENV
 
-      - name: running mylinter
-        run: cd ${{ env.latest }} && opam exec -- mylinter -dir . -add-prefix ${{ env.latest }}/ -ordjsonl ${{ env.RDJSON_FILE_PATH }}
+      #- name: running mylinter
+      #  run: cd ${{ env.latest }} && opam exec -- mylinter -dir . -add-prefix ${{ env.latest }}/ -ordjsonl ${{ env.RDJSON_FILE_PATH }}
 
-      - run: cat ${{ env.latest }}/${{ env.RDJSON_FILE_PATH }}
+      #- run: cat ${{ env.latest }}/${{ env.RDJSON_FILE_PATH }}
 
-      - name: Run reviewdog
+      #- name: Run reviewdog
         #env:
         #  REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: >
-          cat ${{ env.latest }}/${{ env.RDJSON_FILE_PATH }} |
-          reviewdog -f=rdjsonl -filter-mode nofilter -reporter=github-pr-check
+      #  run: >
+      #    cat ${{ env.latest }}/${{ env.RDJSON_FILE_PATH }} |
+      #    reviewdog -f=rdjsonl -filter-mode nofilter -reporter=github-pr-check
 
       #- name: Deploy found lints
       #  uses: peaceiris/actions-gh-pages@v3
