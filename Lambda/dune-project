@@ -6,14 +6,6 @@
 
 (license LGPL-3.0-only)
 
-(authors "FIXME Vasya Pupkin")
-
-(maintainers "FIXME Vasya Pupkin")
-
-(bug_reports "FIXME where to put bug reports about the code")
-
-(homepage "FIXME Homepage")
-
 (package
  (name Lambda) ; FIXME and regenerate .opam file using 'dune build @install'
  (synopsis "FIXME An interpreter for language")
