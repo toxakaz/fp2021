@@ -29,12 +29,14 @@ type vtype =
   | VTInt
   | VTFloat
   | VTChar
-  | VTString
+  | VTString of expr
+  | VTNDString
+  | VTDString of int
   | VTRecord of (name * vtype) list
   | VTFunction of fun_param list * vtype
   | VTArray of expr * expr * vtype
   | VTDArray of value * value * vtype
-  | VTSet of name * name list
+  | VTCustom of name
   | VTVoid
 
 and value =
@@ -49,9 +51,9 @@ and value =
   | VVoid
 
 and fun_param =
-  | FPFree of vtype
-  | FPOut of vtype
-  | FPConst of vtype
+  | FPFree of name * vtype
+  | FPOut of name * vtype
+  | FPConst of name * vtype
 
 and expr =
   | Const of value
@@ -73,8 +75,8 @@ and statement =
 
 and define =
   | DType of name * vtype
-  | NDVariable of name * vtype
-  | DVariable of name * value
-  | DConst of name * value
+  | DVariable of name * vtype
+  | DDVariable of name * vtype * expr
+  | DConst of name * expr
 
 type t = define list * statement list
