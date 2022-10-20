@@ -1,1 +1,1 @@
-val parse : string -> Ast.t
+val parse : string -> Ast.t option

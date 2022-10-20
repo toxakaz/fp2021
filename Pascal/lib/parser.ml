@@ -2,6 +2,7 @@ open Opal
 open Ast
 
 let ( let* ) = ( >>= )
+let ( &> ) p x = p => fun _ -> x
 let cl2s cl = String.concat "" (List.map (String.make 1) cl)
 
 let use_parser parser input_string =
@@ -23,17 +24,17 @@ let check_parser_fail parser input_string =
   | _ -> false
 ;;
 
-let name =
+let word =
   let start = letter <|> exactly '_' in
   lexeme start <~> many (start <|> digit) => cl2s
 ;;
 
-let%test "name usual" = check_parser name "someVariable_123" "somevariable_123"
-let%test "name _ the first" = check_parser name "_someVariable" "_somevariable"
-let%test "name digit the first" = check_parser_fail name "1_someVariable"
+let%test "word usual" = check_parser word "someVariable_123" "somevariable_123"
+let%test "word _ the first" = check_parser word "_someVariable" "_somevariable"
+let%test "word digit the first" = check_parser_fail word "1_someVariable"
 
 let token s =
-  name
+  word
   <|> token s
   >>= function
   | x when x = s -> return s
@@ -96,17 +97,17 @@ let%test "key_word integer" = check_parser key_word "integer" "integer"
 let%test "key_word not key_word" = check_parser_fail key_word "no_key_here"
 let%test "key_word begins" = check_parser_fail key_word "begins"
 
-let word =
-  let* result = name in
+let name =
+  let* result = word in
   match use_parser key_word result with
   | None -> return result
   | _ -> mzero
 ;;
 
-let%test "word usual" = check_parser word "someVariable_123" "somevariable_123"
-let%test "word _ the first" = check_parser word "_someVariable" "_somevariable"
-let%test "word digit the first" = check_parser_fail word "1_someVariable"
-let%test "word when key_word given" = check_parser_fail word "begin"
+let%test "name usual" = check_parser name "someVariable_123" "somevariable_123"
+let%test "name _ the first" = check_parser name "_someVariable" "_somevariable"
+let%test "name digit the first" = check_parser_fail name "1_someVariable"
+let%test "name when key_word given" = check_parser_fail name "begin"
 
 let value =
   let integer = many1 digit => cl2s => int_of_string in
@@ -168,7 +169,7 @@ let%test "value bool false" = check_parser value "false" (VBool false)
 (*list of lists of binary operator parsers, placed by priority*)
 let binop =
   List.map
-    (List.map (fun (op, s) -> token s => fun _ -> op))
+    (List.map (fun (op, s) -> token s &> op))
     [ [ Mul, "*"
       ; FDiv, "/"
       ; Div, "div"
@@ -186,24 +187,24 @@ let binop =
 
 let unop =
   List.map
-    (List.map (fun (op, s) -> token s => fun _ -> op))
+    (List.map (fun (op, s) -> token s &> op))
     [ [ Plus, "+"; Minus, "-"; Not, "not" ] ]
 ;;
 
 let rec expr s =
   let parens p = between (token "(") (token ")") p in
   let func =
-    let* fname = word in
+    let* fname = name in
     let* params = parens (sep_by expr (token ",")) in
     return (Call (fname, params))
   in
   let const = value => fun r -> Const r in
-  let variable = word => fun r -> Variable r in
+  let variable = name => fun r -> Variable r in
   let factor = choice [ func; variable; const; parens expr ] in
   let unpak =
     let rec helper obj =
       let rec_unpack =
-        let* field = token "." >> word in
+        let* field = token "." >> name in
         return (GetRec (obj, field))
       in
       let arr_unpack =
@@ -278,23 +279,130 @@ let%test " - func(a . b.c, 3) [ c ]" =
            , Variable "c" ) ))
 ;;
 
-let rec definition =
-  let names = sep_by word (token ",") in
-  let rec vtype s =
-    let compress_DType_list f lst =
-      let res =
-        List.fold_right
-          (fun n acc ->
-            match acc, n with
-            | Some l, DVariable (n, tp) -> Some (f n tp :: l)
-            | _ -> None)
-          lst
-          (Some [])
-      in
-      match res with
-      | Some l -> return l
-      | None -> mzero
+let rec statement s =
+  let statement_block =
+    between
+      (token "begin")
+      (many (token ";") >> token "end")
+      (sep_by statement (many1 (token ";")))
+    <|> (statement => fun st -> [ st ])
+  in
+  let assign_st =
+    let* left = expr in
+    let* right = token ":=" >> expr in
+    return (Assign (left, right))
+  in
+  let proc_call_st = expr => fun x -> ProcCall x in
+  let if_st =
+    let* condition = token "if" >> expr in
+    let* then_block = token "then" >> statement_block in
+    let* else_block = option [] (token "else" >> statement_block) in
+    return (If (condition, then_block, else_block))
+  in
+  let while_st =
+    let* condition = token "while" >> expr in
+    let* body = token "do" >> statement_block in
+    return (While (condition, body))
+  in
+  let repeat_st =
+    let* body =
+      between
+        (token "repeat")
+        (many (token ";") >> token "until")
+        (sep_by statement (many1 (token ";")))
     in
+    let* condition = expr in
+    return (Repeat (condition, body))
+  in
+  let for_st =
+    let* control_variable = token "for" >> name in
+    let* start = token ":=" >> expr in
+    let* direction = token "to" &> true <|> (token "downto" &> false) in
+    let* finish = expr in
+    let* body = token "do" >> statement_block in
+    if direction
+    then return (For (control_variable, start, finish, body))
+    else return (For (control_variable, finish, start, body))
+  in
+  let break_st = token "break" &> Break in
+  let continue_st = token "continue" &> Continue in
+  choice
+    [ assign_st; if_st; while_st; repeat_st; for_st; break_st; continue_st; proc_call_st ]
+    s
+;;
+
+let%test "assignment test" =
+  check_parser
+    statement
+    "a.b := 42 + 5"
+    (Assign (GetRec (Variable "a", "b"), BinOp (Add, Const (VInt 42), Const (VInt 5))))
+;;
+
+let%test "if _ then statement" =
+  check_parser
+    statement
+    "if a then b:=10"
+    (If (Variable "a", [ Assign (Variable "b", Const (VInt 10)) ], []))
+;;
+
+let%test "if _ then begend else begend" =
+  check_parser
+    statement
+    "if a then begin b := 15; end else begin h := 8 end"
+    (If
+       ( Variable "a"
+       , [ Assign (Variable "b", Const (VInt 15)) ]
+       , [ Assign (Variable "h", Const (VInt 8)) ] ))
+;;
+
+let%test "repeat until" =
+  check_parser
+    statement
+    "repeat a := a + 1; b := a - 1; until a < 128"
+    (Repeat
+       ( BinOp (Less, Variable "a", Const (VInt 128))
+       , [ Assign (Variable "a", BinOp (Add, Variable "a", Const (VInt 1)))
+         ; Assign (Variable "b", BinOp (Sub, Variable "a", Const (VInt 1)))
+         ] ))
+;;
+
+let rec definition s =
+  let names = sep_by name (token ",") in
+  let compress_DType_list f lst =
+    let res =
+      List.fold_right
+        (fun n acc ->
+          match acc, n with
+          | Some l, DNDVariable (n, tp) -> Some (f n tp :: l)
+          | _ -> None)
+        lst
+        (Some [])
+    in
+    match res with
+    | Some l -> return l
+    | None -> mzero
+  in
+  let rec function_arg proc s =
+    let helper =
+      let fun_param =
+        let helper f = as_var >>= compress_DType_list f in
+        let fun_param_free = helper (fun n tp -> FPFree (n, tp)) in
+        let fun_param_const = token "const" >> helper (fun n tp -> FPConst (n, tp)) in
+        let fun_param_out = token "out" >> helper (fun n tp -> FPOut (n, tp)) in
+        fun_param_const <|> fun_param_out <|> fun_param_free
+      in
+      let* params =
+        lexeme (between (token "(") (token ")") (sep_by fun_param (many1 (token ";"))))
+        => List.concat
+      in
+      if proc
+      then return (VTFunction (params, VTVoid))
+      else
+        let* res = token ":" >> vtype in
+        return (VTFunction (params, res))
+    in
+    helper s
+  and vtype s =
     let string_arg =
       option VTNDString (between (token "[") (token "]") expr => fun e -> VTString e)
     in
@@ -316,26 +424,8 @@ let rec definition =
       >>= compress_DType_list (fun n tp -> n, tp)
       => fun lst -> VTRecord lst
     in
-    let function_arg proc =
-      let fun_param =
-        let helper f = as_var >>= compress_DType_list f in
-        let fun_param_free = helper (fun n tp -> FPFree (n, tp)) in
-        let fun_param_const = token "const" >> helper (fun n tp -> FPConst (n, tp)) in
-        let fun_param_out = token "out" >> helper (fun n tp -> FPOut (n, tp)) in
-        fun_param_const <|> fun_param_out <|> fun_param_free
-      in
-      let* params =
-        lexeme (between (token "(") (token ")") (sep_by fun_param (many1 (token ";"))))
-        => List.concat
-      in
-      if proc
-      then return (VTFunction (params, VTVoid))
-      else
-        let* res = token ":" >> vtype in
-        return (VTFunction (params, res))
-    in
     let simple =
-      name
+      word
       >>= function
       | "boolean" -> return VTBool
       | "integer" -> return VTInt
@@ -356,8 +446,8 @@ let rec definition =
       let* exp = option None (token "=" >> expr => fun exp -> Some exp) in
       let helper n acc =
         match exp with
-        | None -> DVariable (n, tp) :: acc
-        | Some exp -> DDVariable (n, tp, exp) :: acc
+        | None -> DNDVariable (n, tp) :: acc
+        | Some exp -> DVariable (n, tp, exp) :: acc
       in
       return (List.fold_right helper vars [])
     in
@@ -369,11 +459,20 @@ let rec definition =
     return (List.fold_right (fun n acc -> DType (n, tp) :: acc) vars [])
   in
   let as_const =
-    let* var = word in
+    let* var = name in
     let* exp = token "=" >> expr in
     return (DConst (var, exp))
   in
-  let as_function = return (DConst ("func", Const (VBool true))) in
+  let as_function =
+    let* ptoc = token "function" &> false <|> (token "procedure" &> true) in
+    let* func_name = name in
+    let* func_type = function_arg ptoc << token ";" in
+    let* funct_prog = program in
+    match func_type with
+    | VTFunction (params, result_type) ->
+      return (DFunction (func_name, result_type, params, funct_prog))
+    | _ -> mzero
+  in
   let block =
     key_word
     >>= function
@@ -385,14 +484,27 @@ let rec definition =
       return (vars @ functions)
     | _ -> mzero
   in
-  many block => List.concat
+  (many block => List.concat) s
+
+and program s =
+  let helper =
+    let* def = definition in
+    let* prog =
+      between
+        (token "begin")
+        (many (token ";") >> token "end")
+        (sep_by statement (token ";"))
+    in
+    return (def, prog)
+  in
+  helper s
 ;;
 
 let%test "definition 1" =
   check_parser
     definition
     "var arr : array [1..10] of array ['a'..'b'] of integer;"
-    [ DVariable
+    [ DNDVariable
         ( "arr"
         , VTArray
             ( Const (VInt 1)
@@ -405,7 +517,7 @@ let%test "definition 2" =
   check_parser
     definition
     "var a, b: integer;"
-    [ DVariable ("a", VTInt); DVariable ("b", VTInt) ]
+    [ DNDVariable ("a", VTInt); DNDVariable ("b", VTInt) ]
 ;;
 
 let%test "definition 3" =
@@ -419,14 +531,62 @@ let%test "definition 4" =
   check_parser
     definition
     "var p : procedure (const x : string);"
-    [ DVariable ("p", VTFunction ([ FPConst ("x", VTNDString) ], VTVoid)) ]
+    [ DNDVariable ("p", VTFunction ([ FPConst ("x", VTNDString) ], VTVoid)) ]
 ;;
 
 let%test "definition 5" =
   check_parser
     definition
     "var i : integer = 42;"
-    [ DDVariable ("i", VTInt, Const (VInt 42)) ]
+    [ DVariable ("i", VTInt, Const (VInt 42)) ]
 ;;
 
-let parse _ = [], []
+let pascal_program = program << token "." << many any
+
+let parse s =
+  match use_parser pascal_program s with
+  | Some (t, _) -> Some t
+  | _ -> None
+;;
+
+let%test "Hello world" =
+  check_parser
+    pascal_program
+    "begin writeln(\'hello world\'); end."
+    ([], [ ProcCall (Call ("writeln", [ Const (VString "hello world") ])) ])
+;;
+
+let%test "Create and use add func" =
+  check_parser
+    pascal_program
+    "\n\
+    \      var\n\
+    \        x, y : integer;\n\
+    \        function add (x, y : integer) : integer;\n\
+    \        begin\n\
+    \          add := x + y;\n\
+    \        end;\n\
+    \      begin\n\
+    \        readln(x);\n\
+    \        readln(y);\n\
+    \        writeln(\'x + y = \', add(x, y));\n\
+    \      end.\n\
+    \    "
+    ( [ DNDVariable ("x", VTInt)
+      ; DNDVariable ("y", VTInt)
+      ; DFunction
+          ( "add"
+          , VTInt
+          , [ FPFree ("x", VTInt); FPFree ("y", VTInt) ]
+          , ([], [ Assign (Variable "add", BinOp (Add, Variable "x", Variable "y")) ]) )
+      ]
+    , [ ProcCall (Call ("readln", [ Variable "x" ]))
+      ; ProcCall (Call ("readln", [ Variable "y" ]))
+      ; ProcCall
+          (Call
+             ( "writeln"
+             , [ Const (VString "x + y = ")
+               ; Call ("add", [ Variable "x"; Variable "y" ])
+               ] ))
+      ] )
+;;

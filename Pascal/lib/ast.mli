@@ -46,7 +46,7 @@ and value =
   | VChar of char
   | VString of string
   | VRecord of (name * value) list
-  | VFunction of fun_param list * define list * statement list
+  | VFunction of name * vtype * fun_param list * t
   | VArray of value * value list
   | VVoid
 
@@ -66,6 +66,7 @@ and expr =
 
 and statement =
   | Assign of expr * expr
+  | ProcCall of expr
   | If of expr * statement list * statement list
   | While of expr * statement list
   | Repeat of expr * statement list
@@ -75,8 +76,11 @@ and statement =
 
 and define =
   | DType of name * vtype
-  | DVariable of name * vtype
-  | DDVariable of name * vtype * expr
+  | DNDVariable of name * vtype
+  | DVariable of name * vtype * expr
+  | DDVariable of name * vtype * value
   | DConst of name * expr
+  | DDConst of name * value
+  | DFunction of name * vtype * fun_param list * t
 
-type t = define list * statement list
+and t = define list * statement list
