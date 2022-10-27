@@ -1,3 +1,7 @@
+(** Copyright 2021-2022, Kazancev Anton *)
+
+(** SPDX-License-Identifier: LGPL-3.0-or-later *)
+
 open Ast
 open KeyMap
 open Eval
@@ -9,7 +13,6 @@ open Parser
 
 let ( => ) arg f = f arg
 let ( >> ) _ arg = arg
-let ( << ) arg _ = arg
 
 let load : world -> name -> vtype * variable =
  fun w n ->

@@ -1,3 +1,7 @@
+(** Copyright 2021-2022, Kazancev Anton *)
+
+(** SPDX-License-Identifier: LGPL-3.0-or-later *)
+
 open KeyMap
 open ImArray
 
@@ -21,11 +25,13 @@ type binop =
   | LessEq
   | RShift
   | LShift
+[@@deriving show]
 
 type unop =
   | Plus
   | Minus
   | Not
+[@@deriving show]
 
 type vtype =
   | VTBool
@@ -43,6 +49,7 @@ type vtype =
   | VTCustom of name
   | VTCollable of name
   | VTVoid
+[@@deriving show]
 
 and value =
   | VBool of bool
@@ -55,11 +62,13 @@ and value =
   | VArray of value * int * vtype * value ImArray.t
   | VCollable of name
   | VVoid
+[@@deriving show]
 
 and fun_param =
   | FPFree of name * vtype
   | FPOut of name * vtype
   | FPConst of name * vtype
+[@@deriving show]
 
 and expr =
   | Const of value
@@ -69,6 +78,7 @@ and expr =
   | Call of expr * expr list
   | GetRec of expr * name
   | GetArr of expr * expr
+[@@deriving show]
 
 and statement =
   | Assign of expr * expr
@@ -79,6 +89,7 @@ and statement =
   | For of name * expr * expr * statement list
   | Break
   | Continue
+[@@deriving show]
 
 and define =
   | DType of name * vtype
@@ -88,12 +99,14 @@ and define =
   | DConst of name * expr
   | DDConst of name * value
   | DFunction of name * vtype * fun_param list * t
+[@@deriving show]
 
 and variable =
   | VConst of value
   | VVariable of value
   | VType
+[@@deriving show]
 
-and world = (vtype * variable) KeyMap.t
+and world = (vtype * variable) KeyMap.t [@@deriving show]
 
-and t = define list * statement list
+and t = define list * statement list [@@deriving show]

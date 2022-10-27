@@ -1,3 +1,7 @@
+(** Copyright 2021-2022, Kazancev Anton *)
+
+(** SPDX-License-Identifier: LGPL-3.0-or-later *)
+
 module KeyMap : sig
   type key = string
   type 'a t = 'a Map.Make(String).t
