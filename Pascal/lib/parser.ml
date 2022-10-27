@@ -194,9 +194,11 @@ let unop =
 let rec expr s =
   let parens p = between (token "(") (token ")") p in
   let func =
-    let* fname = name in
+    let* f = many (satisfy (( != ) '(')) in
     let* params = parens (sep_by expr (token ",")) in
-    return (Call (fname, params))
+    match use_parser (expr << spaces) (cl2s f) with
+    | Some (f, LazyStream.Nil) -> return (Call (f, params))
+    | _ -> mzero
   in
   let const = value => fun r -> Const r in
   let variable = name => fun r -> Variable r in
@@ -275,7 +277,9 @@ let%test " - func(a . b.c, 3) [ c ]" =
     (UnOp
        ( Minus
        , GetArr
-           ( Call ("func", [ GetRec (GetRec (Variable "a", "b"), "c"); Const (VInt 3) ])
+           ( Call
+               ( Variable "func"
+               , [ GetRec (GetRec (Variable "a", "b"), "c"); Const (VInt 3) ] )
            , Variable "c" ) ))
 ;;
 
@@ -392,7 +396,9 @@ let rec definition s =
         fun_param_const <|> fun_param_out <|> fun_param_free
       in
       let* params =
-        lexeme (between (token "(") (token ")") (sep_by fun_param (many1 (token ";"))))
+        lexeme
+          (between (token "(") (token ")") (sep_by fun_param (many1 (token ";")))
+          <|> return [])
         => List.concat
       in
       if proc
@@ -412,9 +418,9 @@ let rec definition s =
         let* fin = token ".." >> expr in
         return (start, fin)
       in
-      let* start, fin = between (token "[") (token "]") interval in
+      let* intervals = between (token "[") (token "]") (sep_by1 interval (token ",")) in
       let* arr_type = token "of" >> vtype in
-      return (VTArray (start, fin, arr_type))
+      return (List.fold_right (fun (s, f) t -> VTArray (s, f, t)) intervals arr_type)
     in
     let record_arg =
       sep_by as_var (many1 (token ";"))
@@ -541,6 +547,13 @@ let%test "definition 5" =
     [ DVariable ("i", VTInt, Const (VInt 42)) ]
 ;;
 
+let%test "definition 6" =
+  check_parser
+    definition
+    "var r : record i : integer; f : real; end;"
+    [ DNDVariable ("r", VTRecord [ "i", VTInt; "f", VTFloat ]) ]
+;;
+
 let pascal_program = program << token "." << many any
 
 let parse s =
@@ -553,7 +566,7 @@ let%test "Hello world" =
   check_parser
     pascal_program
     "begin writeln(\'hello world\'); end."
-    ([], [ ProcCall (Call ("writeln", [ Const (VString "hello world") ])) ])
+    ([], [ ProcCall (Call (Variable "writeln", [ Const (VString "hello world") ])) ])
 ;;
 
 let%test "Create and use add func" =
@@ -580,13 +593,13 @@ let%test "Create and use add func" =
           , [ FPFree ("x", VTInt); FPFree ("y", VTInt) ]
           , ([], [ Assign (Variable "add", BinOp (Add, Variable "x", Variable "y")) ]) )
       ]
-    , [ ProcCall (Call ("readln", [ Variable "x" ]))
-      ; ProcCall (Call ("readln", [ Variable "y" ]))
+    , [ ProcCall (Call (Variable "readln", [ Variable "x" ]))
+      ; ProcCall (Call (Variable "readln", [ Variable "y" ]))
       ; ProcCall
           (Call
-             ( "writeln"
+             ( Variable "writeln"
              , [ Const (VString "x + y = ")
-               ; Call ("add", [ Variable "x"; Variable "y" ])
+               ; Call (Variable "add", [ Variable "x"; Variable "y" ])
                ] ))
       ] )
 ;;

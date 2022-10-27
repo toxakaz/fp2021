@@ -1,3 +1,6 @@
+open KeyMap
+open ImArray
+
 type name = string
 
 type binop =
@@ -33,10 +36,12 @@ type vtype =
   | VTNDString
   | VTDString of int
   | VTRecord of (name * vtype) list
+  | VTDRecord of vtype KeyMap.t
   | VTFunction of fun_param list * vtype
   | VTArray of expr * expr * vtype
-  | VTDArray of value * value * vtype
+  | VTDArray of value * int * vtype
   | VTCustom of name
+  | VTCollable of name
   | VTVoid
 
 and value =
@@ -45,9 +50,10 @@ and value =
   | VFloat of float
   | VChar of char
   | VString of string
-  | VRecord of (name * value) list
-  | VFunction of name * vtype * fun_param list * t
-  | VArray of value * value list
+  | VRecord of world
+  | VFunction of name * vtype * fun_param list * world * statement list
+  | VArray of value * int * vtype * value ImArray.t
+  | VCollable of name
   | VVoid
 
 and fun_param =
@@ -60,7 +66,7 @@ and expr =
   | Variable of name
   | BinOp of binop * expr * expr
   | UnOp of unop * expr
-  | Call of name * expr list
+  | Call of expr * expr list
   | GetRec of expr * name
   | GetArr of expr * expr
 
@@ -82,5 +88,12 @@ and define =
   | DConst of name * expr
   | DDConst of name * value
   | DFunction of name * vtype * fun_param list * t
+
+and variable =
+  | VConst of value
+  | VVariable of value
+  | VType
+
+and world = (vtype * variable) KeyMap.t
 
 and t = define list * statement list
